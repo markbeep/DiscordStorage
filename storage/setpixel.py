@@ -15,10 +15,9 @@ class SetPixel:
 class SetPixelStorage(AbstractMessageStorage[list[SetPixel]]):
     id = "pixel"
 
-    async def decode_content(self, content: str) -> list[SetPixel]:
-        lines = content.splitlines()
+    async def decode_content(self, content: list[str]) -> list[SetPixel]:
         decoded: list[SetPixel] = []
-        for line in lines:
+        for line in content:
             x, y, color, bot_id = line.split()
             decoded.append(SetPixel(int(x), int(y), color, bot_id))
         return decoded

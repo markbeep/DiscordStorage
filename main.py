@@ -4,7 +4,6 @@ import discord
 from dotenv import load_dotenv
 
 from storage.abstract import MessagePair
-from storage.base2048_storage import Base2048Storage
 from storage.root import RootStorage
 from storage.setpixel import SetPixelStorage, SetPixel
 
@@ -50,19 +49,7 @@ class StorageClient(discord.Client):
         pixel_storage = cast(SetPixelStorage, storages["pixel"])
         await pixel_storage.append_message([SetPixel(1, 2, "foo", "bar")])
 
-        if "base2048" not in storages:
-            base2048_storage = Base2048Storage(self)
-            pair = await base2048_storage.init_chain(dm_channel.id)
-            storages["base2048"] = base2048_storage
-            await root_content.write_all(storages)
-
-        base2048_storage = cast(Base2048Storage, storages["base2048"])
-
-        await base2048_storage.write_all(
-            "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vivamus id felis vel diam ultrices placerat. Donec malesuada sodales malesuada. Nulla placerat nisi eu malesuada efficitur. Morbi risus augue, interdum ac dui sed, lobortis vestibulum sapien. Nulla consequat, purus vel mattis scelerisque, ipsum ligula semper felis, ac malesuada ex turpis quis justo. Aliquam pulvinar nulla sapien, at laoreet urna semper ac. Praesent ipsum eros, consectetur quis tempus in, mattis at arcu. Nulla at nulla tellus. Etiam vitae ex nec lacus dictum ultrices tincidunt sit amet justo. Maecenas consequat feugiat libero sollicitudin interdum. Sed nec nunc maximus ligula mollis gravida ut vel nisl. Aenean ac nulla rutrum, tempor orci pretium, tincidunt massa. Pellentesque porta mi id mi aliquam condimentum."
-        )
-        content = await base2048_storage.read_all()
-        print(content)
+        print(await pixel_storage.read_all())
 
 
 def main():

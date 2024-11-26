@@ -10,12 +10,11 @@ class RootStorage(AbstractMessageStorage[dict[str, AbstractMessageStorage[Any]]]
     id = "root"
 
     async def decode_content(
-        self, content: str
+        self, content: list[str]
     ) -> dict[str, AbstractMessageStorage[Any]]:
         storage_contents: dict[str, AbstractMessageStorage[Any]] = {}
-        lines = content.splitlines()
         coros: list[Coroutine[Any, Any, MessagePair]] = []
-        for line in lines:
+        for line in content:
             name, channel_id, message_id, content_type = line.split()
             for typ in content_types:
                 if typ.id == content_type:
