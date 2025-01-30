@@ -1,17 +1,22 @@
 from abc import ABC, abstractmethod
 import asyncio
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+import os
+from typing import Generic, Optional, TypeVar
 
 import discord
 
 from storage.base2048_compress import base2024_decode, base2024_encode
 
 
+REPLICA_COUNT = int(os.getenv("REPLICA_COUNT", "3"))
+
+
 @dataclass
 class MessagePair:
     message_id: int
     channel_id: int
+    # replicas: list["MessagePair"] # TODO
 
 
 T = TypeVar("T")
@@ -20,10 +25,14 @@ T = TypeVar("T")
 class AbstractMessageStorage(ABC, Generic[T]):
     id: str
 
-    def __init__(self, client: discord.Client) -> None:
+    def __init__(
+        self,
+        client: discord.Client,
+        channel_list: dict[int, Optional[discord.abc.Messageable]],
+    ) -> None:
         self.client = client
 
-        self.channels: dict[int, discord.abc.Messageable] = {}
+        self.channel_list = channel_list
         """channel cache"""
 
         self.chain: list[MessagePair] = []
@@ -31,7 +40,8 @@ class AbstractMessageStorage(ABC, Generic[T]):
     async def init_chain(self, channel_id: int) -> MessagePair:
         channel = await self.client.fetch_channel(channel_id)
         assert isinstance(channel, discord.abc.Messageable)
-        self.channels[channel_id] = channel
+        if not self.channel_list[channel_id]:
+            self.channel_list[channel_id] = channel
         message = await channel.send("0 0")
         pair = MessagePair(message.id, channel_id)
         self.chain.append(pair)
@@ -39,7 +49,9 @@ class AbstractMessageStorage(ABC, Generic[T]):
 
     async def load_chain(self, initial_message: MessagePair) -> MessagePair:
         def parse_ids(content: str) -> tuple[int, int]:
-            channel_id, message_id = content[: content.find("\n")].split(" ")
+            if "\n" in content:
+                content = content[: content.find("\n")]
+            channel_id, message_id = content.split(" ")
             return int(channel_id), int(message_id)
 
         channel_id, message_id = initial_message.channel_id, initial_message.message_id
@@ -47,11 +59,11 @@ class AbstractMessageStorage(ABC, Generic[T]):
 
         while channel_id != 0 and message_id != 0:
             # we only want to fetch a channel once
-            channel = self.channels.get(channel_id)
+            channel = self.channel_list.get(channel_id)
             if channel is None:
                 channel = await self.client.fetch_channel(channel_id)
                 assert isinstance(channel, discord.abc.Messageable)
-                self.channels[channel_id] = channel
+                self.channel_list[channel_id] = channel
             message = await channel.fetch_message(int(message_id))
             channel_id, message_id = parse_ids(message.content)
             if channel_id == 0 and message_id == 0:
@@ -68,7 +80,12 @@ class AbstractMessageStorage(ABC, Generic[T]):
         pass
 
     async def _read_message(self, pair: MessagePair) -> list[str]:
-        channel = self.channels[pair.channel_id]
+        channel = self.channel_list[pair.channel_id]
+        if not channel:
+            channel = await self.client.fetch_channel(pair.channel_id)
+            assert isinstance(channel, discord.abc.Messageable)
+            self.channel_list[pair.channel_id] = channel
+
         message = await channel.fetch_message(pair.message_id)
         lines = message.content.splitlines()[1:]
         return [base2024_decode(x) for x in lines]
@@ -119,12 +136,17 @@ class AbstractMessageStorage(ABC, Generic[T]):
         Appends data to the current chain.
         """
         content = await self.encode_content(obj)
-        assert all(
-            len(line) <= 1900 for line in content
-        ), "Each line must be at most 1900 characters long"
+        assert all(len(line) <= 1900 for line in content), (
+            "Each line must be at most 1900 characters long"
+        )
 
         last_message = self.chain[-1]
-        channel = self.channels[last_message.channel_id]
+        channel = self.channel_list[last_message.channel_id]
+        if not channel:
+            channel = await self.client.fetch_channel(last_message.channel_id)
+            assert isinstance(channel, discord.abc.Messageable)
+            self.channel_list[last_message.channel_id] = channel
+
         last_message = await channel.fetch_message(last_message.message_id)
         last_message_content = last_message.content.splitlines()
 
@@ -137,8 +159,8 @@ class AbstractMessageStorage(ABC, Generic[T]):
 
         prev_channel_id = 0
         prev_message_id = 0
+        # send last message first to get the id
         for i, body in enumerate(encoded_contents[::-1]):
-            # send last message first to get the id
             message_content = f"{prev_channel_id} {prev_message_id}\n{body}"
             assert len(message_content) <= 2000, "Message content too long"
 
@@ -146,6 +168,7 @@ class AbstractMessageStorage(ABC, Generic[T]):
                 # in the last iteration we edit the original message instead of creating a new one
                 await last_message.edit(content=message_content)
             else:
+                # TODO: send multiple replicas and keep track of replicas in previous messages
                 message = await channel.send(message_content)
                 self.chain.append(
                     MessagePair(message_id=message.id, channel_id=message.channel.id)

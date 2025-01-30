@@ -2,6 +2,7 @@ import asyncio
 from storage.abstract import AbstractMessageStorage, MessagePair
 from typing import Any, Coroutine
 
+from storage.json_storage import JSONStorage
 from storage.setpixel import SetPixelStorage
 from storage.string_storage import StringStorage
 
@@ -18,7 +19,7 @@ class RootStorage(AbstractMessageStorage[dict[str, AbstractMessageStorage[Any]]]
             name, channel_id, message_id, content_type = line.split()
             for typ in content_types:
                 if typ.id == content_type:
-                    storage = typ(self.client)
+                    storage = typ(self.client, self.channel_list)
                     storage_contents[name] = storage
                     coros.append(
                         storage.load_chain(
@@ -45,4 +46,9 @@ class RootStorage(AbstractMessageStorage[dict[str, AbstractMessageStorage[Any]]]
         ]
 
 
-content_types = [SetPixelStorage, StringStorage, RootStorage]
+content_types = [
+    SetPixelStorage,
+    StringStorage,
+    RootStorage,
+    JSONStorage,
+]

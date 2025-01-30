@@ -1,14 +1,14 @@
 import os
-from typing import cast
+from typing import Optional, cast
 import discord
 from dotenv import load_dotenv
 
 from storage.abstract import MessagePair
+from storage.json_storage import JSONStorage
 from storage.root import RootStorage
-from storage.setpixel import SetPixelStorage, SetPixel
 
 
-cache = []
+channel_list: dict[int, Optional[discord.abc.Messageable]] = {}
 
 
 class StorageClient(discord.Client):
@@ -18,7 +18,7 @@ class StorageClient(discord.Client):
 
         dm_channel = await self.application.owner.create_dm()
 
-        root_content = RootStorage(self)
+        root_content = RootStorage(self, channel_list)
 
         root_message_id = os.getenv("ROOT_MESSAGE_ID")
         if root_message_id is None or root_message_id == "0":
@@ -40,16 +40,17 @@ class StorageClient(discord.Client):
 
         storages = await root_content.read_all()
 
-        if "pixel" not in storages:
-            pixel_storage = SetPixelStorage(self)
-            pair = await pixel_storage.init_chain(dm_channel.id)
-            storages["pixel"] = pixel_storage
+        # dict of all available dm channels and the user IDs they belong to
+        if "channels" not in storages:
+            channel_storage = JSONStorage(self, channel_list)
+            pair = await channel_storage.init_chain(dm_channel.id)
+            storages["channels"] = channel_storage
             await root_content.write_all(storages)
 
-        pixel_storage = cast(SetPixelStorage, storages["pixel"])
-        await pixel_storage.append_message([SetPixel(1, 2, "foo", "bar")])
+        channel_storage = cast(JSONStorage, storages["channels"])
+        await channel_storage.write_all(["foo", {"aaaa": "bbbb"}])
 
-        print(await pixel_storage.read_all())
+        print(await channel_storage.read_all())
 
 
 def main():
